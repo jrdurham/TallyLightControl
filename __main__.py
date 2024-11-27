@@ -27,6 +27,7 @@ class Observer:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        light("light", "green", "0")
         self._client.disconnect()
 
     def on_stream_state_changed(self, data):
@@ -37,7 +38,6 @@ class Observer:
         
 
     def on_exit_started(self, _):
-        requests.get(f"http://localhost:8989/?action=light&green=0")
         self.running = False
 
 def config_initialize():
@@ -61,29 +61,27 @@ def config_initialize():
         print("Exiting.")
         quit()
 
-def light(action, color):
-    url = f"http://localhost:8989/?action={action}&{color}=100"
+def light(action, color, value="100"):
+    url = f"http://localhost:8989/?action={action}&{color}={value}"
     requests.get(url)
 
 def updateLight():
     status= req_client.get_stream_status()
     scene = f"{req_client.get_scene_list().current_program_scene_name}"
     if status.output_reconnecting == True:
-        if scene == f"{TALLY_SCENE}":
             light("blink", "yellow")
-        else:
-            light("light", "yellow")
     elif status.output_active == True:
         if scene == f"{TALLY_SCENE}":
             light('light', 'red')
         else:
-            light('blink', 'green')
+            light('light', 'green')
     else:
-        light('light', 'green')
+        light('blink', 'green')
 
 
 if __name__ == "__main__":
     config_initialize()
+    light('light', 'yellow')
     with Observer() as  observer:
         with obs.ReqClient() as req_client:
             while observer.running:
