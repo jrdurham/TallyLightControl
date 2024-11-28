@@ -4,7 +4,6 @@ import rpyc
 import toml
 import stacklight
 import signal
-import sys
 import obsws_python as obs
 
 from rpyc.utils.server import ThreadedServer
@@ -55,6 +54,8 @@ class Observer:
             "OBS_WEBSOCKET_OUTPUT_RECONNECTED",
         ):
             self.updateLight(override={"green": "on"})
+            time.sleep(1)
+            self.updateLight()
         elif f"{data.output_state}" in ("OBS_WEBSOCKET_OUTPUT_STOPPING"):
             self.updateLight(override={"red": "off", "green": "flash"})
         elif f"{data.output_state}" in ("OBS_WEBSOCKET_OUTPUT_STOPPED"):
@@ -103,12 +104,13 @@ class Observer:
             print("Stacklight initialized.")
             return
 
-        if stream != True:
-            return
-        elif scene == f"{TALLY_SCENE}":
-            light("red", "on")
-        else:
-            light("red", "off")
+        scene = f"{req_client.get_scene_list().current_program_scene_name}"
+
+        if stream == True:
+            if scene == f"{TALLY_SCENE}":
+                light("red", "on")
+            else:
+                light("red", "off")
 
     def graceful_exit(self, *args):
         print("Exiting...")

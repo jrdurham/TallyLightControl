@@ -1,9 +1,7 @@
 import serial
-import os
 import time
 import queue
 import threading
-import signal
 
 import serial.tools
 import serial.tools.list_ports
