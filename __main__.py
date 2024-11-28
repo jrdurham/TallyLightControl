@@ -1,15 +1,25 @@
 import os
-import requests
 import time
+import rpyc
 import toml
-
+import stacklight
+import signal
+import sys
 import obsws_python as obs
+
+from rpyc.utils.server import ThreadedServer
 
 # Simple script to change the state of the tally light based on
 # stream and scene statuses.
 
 # Scene to bind tally light state to
 TALLY_SCENE = "Camera"
+
+lights = {}
+lights["red"] = "off"
+lights["yellow"] = "off"  # Self test leaves the light flashing yellow.
+lights["green"] = "off"
+
 
 class Observer:
     def __init__(self):
@@ -22,67 +32,130 @@ class Observer:
             ]
         )
         self.running = True
+        signal.signal(signal.SIGINT, self.graceful_exit)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        light("light", "green", "0")
         self._client.disconnect()
 
     def on_stream_state_changed(self, data):
-        updateLight()
+        print(f"{data.output_state}")
+        if f"{data.output_state}" in (
+            "OBS_WEBSOCKET_OUTPUT_STARTING",
+            "OBS_WEBSOCKET_OUTPUT_RECONNECTING",
+            "OBS_WEBSOCKET_OUTPUT_PAUSED",
+            "OBS_WEBSOCKET_OUTPUT_UNKNOWN",
+        ):
+            self.updateLight(override={"green": "flash"})
+        elif f"{data.output_state}" in (
+            "OBS_WEBSOCKET_OUTPUT_STARTED",
+            "OBS_WEBSOCKET_OUTPUT_RESUMED",
+            "OBS_WEBSOCKET_OUTPUT_RECONNECTED",
+        ):
+            self.updateLight(override={"green": "on"})
+        elif f"{data.output_state}" in ("OBS_WEBSOCKET_OUTPUT_STOPPING"):
+            self.updateLight(override={"red": "off", "green": "flash"})
+        elif f"{data.output_state}" in ("OBS_WEBSOCKET_OUTPUT_STOPPED"):
+            time.sleep(2)
+            self.updateLight(override={"green": "off", "red": "off", "yellow": "off"})
+        elif f"{data.output_active}" == False:
+            self.updateLight("green", "off")
 
     def on_current_program_scene_changed(self, data):
-        updateLight()
-        
+        self.updateLight(scene=data.scene_name)
 
-    def on_exit_started(self, _):
-        self.running = False
+    def on_exit_started(self, data):
+        self.graceful_exit()
+
+    def light(self, color: str, status: str):
+        if lights[f"{color}"] != f"{status}":
+            lights[f"{color}"] = f"{status}"
+            stacklight.cmd_light(color, status)
+            print(f"Commanded: {color} {status}")
+        else:
+            print(f"Already set: {color} {status}")
+
+    def updateLight(self, init=False, override=None, scene=None):
+        light = self.light
+
+        if override is not None:
+            if len(override) > 1:
+                for key in override:
+                    light(key, override[key])
+                    time.sleep(1)
+            else:
+                for key in override:
+                    light(key, override[key])
+            return
+
+        stream = req_client.get_stream_status().output_active
+
+        if init is True:
+            if stream == True:
+                light("green", "on")
+                if (
+                    f"{req_client.get_scene_list().current_program_scene_name}"
+                    == f"{TALLY_SCENE}"
+                ):
+                    light("red", "on")
+            print("Stacklight initialized.")
+            return
+
+        if stream != True:
+            return
+        elif scene == f"{TALLY_SCENE}":
+            light("red", "on")
+        else:
+            light("red", "off")
+
+    def graceful_exit(self, *args):
+        print("Exiting...")
+        stacklight.clr_light()
+        os._exit(0)
+        server.close
+
+
+class StacklightService(rpyc.Service):
+    def exposed_light_override(self, override=None):
+        print("Client command received!")
+        if override is not None:
+            observer.updateLight(override=override)
+        else:
+            return "Error: No override values given!"
+
+    def exposed_init(self):
+        stacklight.init()
+
 
 def config_initialize():
-    CONFIG="config.toml"
+    CONFIG = "config.toml"
     if not os.path.isfile(CONFIG):
-        
+
         print("No config present, initializing.")
 
         DEFAULT_DATA = {
-            "connection": {
-                "host": "localhost",
-                "port": 4455,
-                "password": "ChangeMe!"
-            }
+            "connection": {"host": "localhost", "port": 4455, "password": "ChangeMe!"}
         }
 
         with open(CONFIG, "w") as f:
             toml.dump(DEFAULT_DATA, f)
-        
-        print("Config initialized, edit password value in config.toml before running again.")
+
+        print(
+            "Config initialized, edit password value in config.toml before running again."
+        )
         print("Exiting.")
         quit()
-
-def light(action, color, value="100"):
-    url = f"http://localhost:8989/?action={action}&{color}={value}"
-    requests.get(url)
-
-def updateLight():
-    status= req_client.get_stream_status()
-    scene = f"{req_client.get_scene_list().current_program_scene_name}"
-    if status.output_reconnecting == True:
-            light("blink", "yellow")
-    elif status.output_active == True:
-        if scene == f"{TALLY_SCENE}":
-            light('light', 'red')
-        else:
-            light('light', 'green')
-    else:
-        light('blink', 'green')
 
 
 if __name__ == "__main__":
     config_initialize()
-    light('light', 'yellow')
-    with Observer() as  observer:
+    with Observer() as observer:
         with obs.ReqClient() as req_client:
+            print(stacklight.init())
+            observer.updateLight(init=True)
+            server = ThreadedServer(StacklightService, port=11152, hostname="localhost")
+            server.start()
             while observer.running:
                 time.sleep(0.1)
