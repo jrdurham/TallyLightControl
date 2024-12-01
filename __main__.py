@@ -28,6 +28,7 @@ class Observer:
                 self.on_current_program_scene_changed,
                 self.on_stream_state_changed,
                 self.on_exit_started,
+                self.on_scene_transition_started,
             ]
         )
         self.running = True
@@ -65,7 +66,11 @@ class Observer:
             self.updateLight("green", "off")
 
     def on_current_program_scene_changed(self, data):
-        self.updateLight(scene=data.scene_name)
+        self.updateLight(data.scene_name)
+    
+    def on_scene_transition_started(self, data):
+        if f"{data.transition_name}" == "CamWipe" and lights["green"] in ("on","flash"):
+            self.updateLight(override={"red": "on"})
 
     def on_exit_started(self, data):
         self.graceful_exit()
@@ -129,6 +134,9 @@ class StacklightService(rpyc.Service):
 
     def exposed_init(self):
         stacklight.init()
+    
+    def exposed_clr(self):
+        stacklight.clr_light()
 
 
 def config_initialize():
@@ -155,7 +163,7 @@ if __name__ == "__main__":
     config_initialize()
     with Observer() as observer:
         with obs.ReqClient() as req_client:
-            print(stacklight.init())
+            #print(stacklight.init())
             observer.updateLight(init=True)
             server = ThreadedServer(StacklightService, port=11152, hostname="localhost")
             server.start()
