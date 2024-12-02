@@ -14,6 +14,10 @@ from rpyc.utils.server import ThreadedServer
 # Scene to bind tally light state to
 TALLY_SCENE = "Camera"
 
+# Transition used for tally light. This turns the light red as soon as the transition to the camera is begun.
+# Requires a unique transition name set for the TALLY_SCENE's transition override.
+TALLY_TRANSITION = "CamWipe"
+
 lights = {}
 lights["red"] = "off"
 lights["yellow"] = "off"  # Self test leaves the light flashing yellow.
@@ -69,7 +73,7 @@ class Observer:
         self.updateLight(data.scene_name)
     
     def on_scene_transition_started(self, data):
-        if f"{data.transition_name}" == "CamWipe" and lights["green"] in ("on","flash"):
+        if f"{data.transition_name}" == f"{TALLY_TRANSITION}" and lights["green"] in ("on","flash"):
             self.updateLight(override={"red": "on"})
 
     def on_exit_started(self, data):
@@ -163,7 +167,7 @@ if __name__ == "__main__":
     config_initialize()
     with Observer() as observer:
         with obs.ReqClient() as req_client:
-            #print(stacklight.init())
+            print(stacklight.init())
             observer.updateLight(init=True)
             server = ThreadedServer(StacklightService, port=11152, hostname="localhost")
             server.start()
