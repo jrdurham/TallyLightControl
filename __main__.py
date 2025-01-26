@@ -13,6 +13,7 @@ from rpyc.utils.server import ThreadedServer
 
 # Scene to bind tally light state to
 TALLY_SCENE = "Camera"
+TALLY_SCENE_AUDIO="STBY2"
 
 # Transition used for tally light. This turns the light red as soon as the transition to the camera is begun.
 # Requires a unique transition name set for the TALLY_SCENE's transition override.
@@ -110,6 +111,11 @@ class Observer:
                     == f"{TALLY_SCENE}"
                 ):
                     light("red", "on")
+                elif (
+                    f"{req_client.get_scene_list().current_program_scene_name}"
+                    == f"{TALLY_SCENE_AUDIO}"
+                ):
+                    light("red", "flash")
             print("Stacklight initialized.")
             return
 
@@ -118,6 +124,8 @@ class Observer:
         if stream == True:
             if scene == f"{TALLY_SCENE}":
                 light("red", "on")
+            elif scene == f"{TALLY_SCENE_AUDIO}":
+                light("red", "flash")
             else:
                 light("red", "off")
 
